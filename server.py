@@ -5,7 +5,7 @@
 # Misuse of such scripts can lead to account bans or legal consequences.
 # The author is not responsible for any misuse or damage caused by this script.
 # Only works with one site
-# Version 2.1; Base64 Image Support
+# Version 2.2; Cross-platform
 
 import time
 from dotenv import load_dotenv
@@ -15,6 +15,7 @@ from flask import Flask, jsonify, request
 import base64
 from pathlib import Path
 from flask_cors import CORS
+import platform
 
 load_dotenv()
 
@@ -48,11 +49,20 @@ def init_page():
 
     # Initializing Page
     page = browser.new_page()
-    page.add_init_script("""
-        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-        Object.defineProperty(navigator, 'platform', { get: () => 'Linux x86_64' });
-        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+    system = platform.system()
+
+    if system == "Windows":
+        platform_name = "Win32"
+    elif system == "Darwin":
+        platform_name = "MacIntel"
+    else:
+        platform_name = "Linux x86_64"
+
+    page.add_init_script(f"""
+        Object.defineProperty(navigator, 'webdriver', {{ get: () => undefined }});
+        Object.defineProperty(navigator, 'languages', {{ get: () => ['en-US', 'en'] }});
+        Object.defineProperty(navigator, 'platform', {{ get: () => '{platform_name}' }});
+        Object.defineProperty(navigator, 'plugins', {{ get: () => [1, 2, 3, 4] }});
     """)
     page.goto(os.getenv("SITE"))
     time.sleep(2)
@@ -147,20 +157,13 @@ def receive_img():
     upload_files_menu_item.click()
     time.sleep(1)
 
-    import subprocess
-    subprocess.run('hyprctl dispatch closewindow address:$(hyprctl clients -j | jq -r \'.[] | select(.class=="Chrome" and .title=="Open Files") | .address\')',
-        shell=True,
-        check=True
-    )
-    time.sleep(3)
-    
     # Use the saved image path
     file_input = page.locator('input[type="file"]')
     absolute_path = os.path.abspath(image_path)
     file_input.set_input_files(absolute_path)
     print(f"✅ Image uploaded successfully from: {absolute_path}") 
     
-    time.sleep(15) # Statically wait for the image to upload
+    time.sleep(3) # Statically wait for the image to upload
     textbox.click()
     textbox.press("Enter")
     time.sleep(2)
