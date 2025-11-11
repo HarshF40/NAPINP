@@ -5,20 +5,28 @@
 # Misuse of such scripts can lead to account bans or legal consequences.
 # The author is not responsible for any misuse or damage caused by this script.
 # Only works with one site
-# Version 2.0; Image Support
+# Version 2.1; Base64 Image Support
 
 import time
 from dotenv import load_dotenv
 import os
 from playwright.sync_api import sync_playwright
 from flask import Flask, jsonify, request
+import base64
+from pathlib import Path
+from flask_cors import CORS
 
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)
 playwright = None 
 browser = None 
 page = None
+
+# Create uploads folder if it doesn't exist
+UPLOAD_FOLDER = "uploaded_images"
+Path(UPLOAD_FOLDER).mkdir(exist_ok=True)
 
 def init_page():
     global playwright, browser, user_data_dir, page
@@ -72,7 +80,6 @@ def receive_request():
     time.sleep(1)
 
     # Enter the query and send
-    #textbox.type(query, delay=10)
     textbox.fill(query)
     time.sleep(2)
     textbox.press("Enter")
@@ -96,7 +103,32 @@ def receive_img():
     global playwright, browser, page 
     data = request.get_json(force=True)
     query = data.get("query")
-    links = data.get("links")
+    base64_image = data.get("image")  # Get base64 encoded image
+    
+    if not base64_image:
+        return jsonify({"status": "error", "message": "No image provided"}), 400
+    
+    try:
+        # Remove data URI prefix if present (e.g., "data:image/png;base64,")
+        if "," in base64_image:
+            base64_image = base64_image.split(",")[1]
+        
+        # Decode base64 image
+        image_data = base64.b64decode(base64_image)
+        
+        # Generate unique filename with timestamp
+        timestamp = int(time.time() * 1000)
+        image_path = os.path.join(UPLOAD_FOLDER, f"image_{timestamp}.png")
+        
+        # Save the image to disk
+        with open(image_path, "wb") as f:
+            f.write(image_data)
+        
+        print(f"✅ Image saved to: {image_path}")
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": f"Failed to decode/save image: {str(e)}"}), 400
+    
     # Locate the input field
     textbox = page.get_by_role("textbox", name="Enter a prompt here")
     textbox.click()
@@ -105,14 +137,13 @@ def receive_img():
     textbox.fill(query)
     time.sleep(2)
 
-
     upload_button = page.locator('button[aria-label="Open upload file menu"].upload-card-button.open')
-    upload_button.wait_for(timeout=5000)
+    upload_button.wait_for(timeout=10000000)
     upload_button.click()
     time.sleep(1)
 
     upload_files_menu_item = page.locator("div.menu-text", has_text="Upload files")
-    upload_files_menu_item.wait_for(timeout=5000)
+    upload_files_menu_item.wait_for(timeout=10000000)
     upload_files_menu_item.click()
     time.sleep(1)
 
@@ -122,11 +153,14 @@ def receive_img():
         check=True
     )
     time.sleep(3)
+    
+    # Use the saved image path
     file_input = page.locator('input[type="file"]')
-    #file_input.wait_for(state="attached", timeout=10000)
-    file_input.set_input_files(links)
-    print("✅ Image uploaded successfully.") 
-    time.sleep(25) # Statically wait for the image to uplaod
+    absolute_path = os.path.abspath(image_path)
+    file_input.set_input_files(absolute_path)
+    print(f"✅ Image uploaded successfully from: {absolute_path}") 
+    
+    time.sleep(15) # Statically wait for the image to upload
     textbox.click()
     textbox.press("Enter")
     time.sleep(2)
@@ -142,9 +176,17 @@ def receive_img():
 
     # Extract the content
     response = locater.inner_text()
-    return jsonify({"status": "success", "response":response})
+    
+    # Optional: Clean up the saved image after processing
+    try:
+        os.remove(absolute_path)
+        print(f"🗑️ Cleaned up image: {absolute_path}")
+    except:
+        pass
+    
+    return jsonify({"status": "success", "response": response})
 
 
 if __name__ == "__main__":
     init_page()
-    app.run(threaded=False)
+    app.run(host='0.0.0.0', port=5000, threaded=False)
